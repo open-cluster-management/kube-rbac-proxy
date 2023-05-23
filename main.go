@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +38,7 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
+	"k8s.io/apiserver/pkg/authorization/union"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -133,7 +135,10 @@ func main() {
 	//Kubeconfig flag
 	flagset.StringVar(&cfg.kubeconfigLocation, "kubeconfig", "", "Path to a kubeconfig file, specifying how to connect to the API server. If unset, in-cluster configuration will be used")
 
-	flagset.Parse(os.Args[1:])
+	err := flagset.Parse(os.Args[1:])
+	if err != nil {
+		klog.Fatalf("Failed to parse CLI flags: %v", err)
+	}
 	kcfg := initKubeConfig(cfg.kubeconfigLocation)
 
 	upstreamURL, err := url.Parse(cfg.upstream)
@@ -170,25 +175,36 @@ func main() {
 		if err != nil {
 			klog.Fatalf("Failed to instantiate OIDC authenticator: %v", err)
 		}
-
 	} else {
 		//Use Delegating authenticator
 		klog.Infof("Valid token audiences: %s", strings.Join(cfg.auth.Authentication.Token.Audiences, ", "))
 
 		tokenClient := kubeClient.AuthenticationV1().TokenReviews()
-		authenticator, err = authn.NewDelegatingAuthenticator(tokenClient, cfg.auth.Authentication)
+		delegatingAuthenticator, err := authn.NewDelegatingAuthenticator(tokenClient, cfg.auth.Authentication)
 		if err != nil {
 			klog.Fatalf("Failed to instantiate delegating authenticator: %v", err)
 		}
 
+		go delegatingAuthenticator.Run(1, context.Background().Done())
+		authenticator = delegatingAuthenticator
 	}
 
 	sarClient := kubeClient.AuthorizationV1().SubjectAccessReviews()
-	authorizer, err := authz.NewAuthorizer(sarClient)
+	sarAuthorizer, err := authz.NewSarAuthorizer(sarClient)
 
 	if err != nil {
-		klog.Fatalf("Failed to create authorizer: %v", err)
+		klog.Fatalf("Failed to create sar authorizer: %v", err)
 	}
+
+	staticAuthorizer, err := authz.NewStaticAuthorizer(cfg.auth.Authorization.Static)
+	if err != nil {
+		klog.Fatalf("Failed to create static authorizer: %v", err)
+	}
+
+	authorizer := union.New(
+		staticAuthorizer,
+		sarAuthorizer,
+	)
 
 	auth, err := proxy.New(kubeClient, cfg.auth, authorizer, authenticator)
 
@@ -205,14 +221,31 @@ func main() {
 		klog.Fatal("Cannot use --allow-paths and --ignore-paths together.")
 	}
 
+	for _, pathAllowed := range cfg.allowPaths {
+		_, err := path.Match(pathAllowed, "")
+		if err != nil {
+			klog.Fatalf("Failed to verify allow path: %s", pathAllowed)
+		}
+	}
+
+	for _, pathIgnored := range cfg.ignorePaths {
+		_, err := path.Match(pathIgnored, "")
+		if err != nil {
+			klog.Fatalf("Failed to verify ignored path: %s", pathIgnored)
+		}
+	}
+
 	proxy := httputil.NewSingleHostReverseProxy(upstreamURL)
 	proxy.Transport = upstreamTransport
 	mux := http.NewServeMux()
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		found := len(cfg.allowPaths) == 0
-		for _, path := range cfg.allowPaths {
-			if req.URL.Path == path {
-				found = true
+		for _, pathAllowed := range cfg.allowPaths {
+			found, err = path.Match(pathAllowed, req.URL.Path)
+			if err != nil {
+				return
+			}
+			if found {
 				break
 			}
 		}
@@ -222,9 +255,12 @@ func main() {
 		}
 
 		ignorePathFound := false
-		for _, path := range cfg.ignorePaths {
-			if req.URL.Path == path {
-				ignorePathFound = true
+		for _, pathIgnored := range cfg.ignorePaths {
+			ignorePathFound, err = path.Match(pathIgnored, req.URL.Path)
+			if err != nil {
+				return
+			}
+			if ignorePathFound {
 				break
 			}
 		}
@@ -353,7 +389,7 @@ func main() {
 		}
 	}
 	{
-		sig := make(chan os.Signal)
+		sig := make(chan os.Signal, 1)
 		gr.Add(func() error {
 			signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 			<-sig
