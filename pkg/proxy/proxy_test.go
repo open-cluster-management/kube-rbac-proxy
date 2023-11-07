@@ -17,72 +17,14 @@ limitations under the License.
 package proxy
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/brancz/kube-rbac-proxy/pkg/authn"
 	"github.com/brancz/kube-rbac-proxy/pkg/authz"
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/apiserver/pkg/authentication/authenticator"
-	"k8s.io/apiserver/pkg/authentication/request/bearertoken"
-	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
-	testclient "k8s.io/client-go/kubernetes/fake"
 )
-
-func TestProxyWithOIDCSupport(t *testing.T) {
-	kc := testclient.NewSimpleClientset()
-	cfg := Config{
-		Authentication: &authn.AuthnConfig{
-			OIDC: &authn.OIDCConfig{},
-			Header: &authn.AuthnHeaderConfig{
-				Enabled:         true,
-				UserFieldName:   "user",
-				GroupsFieldName: "groups",
-			},
-			Token: &authn.TokenConfig{},
-		},
-		Authorization: &authz.Config{},
-	}
-
-	fakeUser := user.DefaultInfo{Name: "Foo Bar", Groups: []string{"foo-bars"}}
-	authenticator := fakeOIDCAuthenticator(t, &fakeUser)
-
-	scenario := setupTestScenario()
-	for _, v := range scenario {
-
-		t.Run(v.description, func(t *testing.T) {
-
-			w := httptest.NewRecorder()
-			proxy, err := New(kc, cfg, v.authorizer, authenticator)
-
-			if err != nil {
-				t.Fatalf("Failed to instantiate test proxy. Details : %s", err.Error())
-			}
-			proxy.Handle(w, v.req)
-
-			resp := w.Result()
-
-			if resp.StatusCode != v.status {
-				t.Errorf("Expected response: %d received : %d", v.status, resp.StatusCode)
-			}
-
-			if v.verifyUser {
-				user := v.req.Header.Get(cfg.Authentication.Header.UserFieldName)
-				groups := v.req.Header.Get(cfg.Authentication.Header.GroupsFieldName)
-				if user != fakeUser.GetName() {
-					t.Errorf("User in the response header does not match authenticated user. Expected : %s, received : %s ", fakeUser.GetName(), user)
-				}
-				if groups != strings.Join(fakeUser.GetGroups(), cfg.Authentication.Header.GroupSeparator) {
-					t.Errorf("Groupsr in the response header does not match authenticated user groups. Expected : %s, received : %s ", fakeUser.GetName(), groups)
-				}
-			}
-		})
-	}
-}
 
 func TestGeneratingAuthorizerAttributes(t *testing.T) {
 	cases := []struct {
@@ -134,7 +76,7 @@ func TestGeneratingAuthorizerAttributes(t *testing.T) {
 				Rewrites:           &authz.SubjectAccessReviewRewrites{ByQueryParameter: &authz.QueryParameterRewriteConfig{Name: "namespace"}},
 				ResourceAttributes: &authz.ResourceAttributes{Namespace: "{{ .Value }}", APIVersion: "v1", Resource: "namespace", Subresource: "metrics"},
 			},
-			createRequest(map[string]string{"namespace": "tenant1"}, nil),
+			createRequest(map[string][]string{"namespace": {"tenant1"}}, nil),
 			[]authorizer.Attributes{
 				authorizer.AttributesRecord{
 					User:            nil,
@@ -164,12 +106,44 @@ func TestGeneratingAuthorizerAttributes(t *testing.T) {
 				Rewrites:           &authz.SubjectAccessReviewRewrites{ByHTTPHeader: &authz.HTTPHeaderRewriteConfig{Name: "namespace"}},
 				ResourceAttributes: &authz.ResourceAttributes{Namespace: "{{ .Value }}", APIVersion: "v1", Resource: "namespace", Subresource: "metrics"},
 			},
-			createRequest(nil, map[string]string{"namespace": "tenant1"}),
+			createRequest(nil, map[string][]string{"namespace": {"tenant1"}}),
 			[]authorizer.Attributes{
 				authorizer.AttributesRecord{
 					User:            nil,
 					Verb:            "get",
 					Namespace:       "tenant1",
+					APIGroup:        "",
+					APIVersion:      "v1",
+					Resource:        "namespace",
+					Subresource:     "metrics",
+					Name:            "",
+					ResourceRequest: true,
+				},
+			},
+		},
+		{
+			"with http header rewrites config and additional header",
+			&authz.Config{
+				Rewrites:           &authz.SubjectAccessReviewRewrites{ByHTTPHeader: &authz.HTTPHeaderRewriteConfig{Name: "namespace"}},
+				ResourceAttributes: &authz.ResourceAttributes{Namespace: "{{ .Value }}", APIVersion: "v1", Resource: "namespace", Subresource: "metrics"},
+			},
+			createRequest(nil, map[string][]string{"namespace": {"tenant1", "tenant2"}}),
+			[]authorizer.Attributes{
+				authorizer.AttributesRecord{
+					User:            nil,
+					Verb:            "get",
+					Namespace:       "tenant1",
+					APIGroup:        "",
+					APIVersion:      "v1",
+					Resource:        "namespace",
+					Subresource:     "metrics",
+					Name:            "",
+					ResourceRequest: true,
+				},
+				authorizer.AttributesRecord{
+					User:            nil,
+					Verb:            "get",
+					Namespace:       "tenant2",
 					APIGroup:        "",
 					APIVersion:      "v1",
 					Resource:        "namespace",
@@ -197,7 +171,10 @@ func TestGeneratingAuthorizerAttributes(t *testing.T) {
 				},
 				ResourceAttributes: &authz.ResourceAttributes{Namespace: "{{ .Value }}", APIVersion: "v1", Resource: "namespace", Subresource: "metrics"},
 			},
-			createRequest(map[string]string{"namespace": "tenant1"}, map[string]string{"namespace": "tenant2"}),
+			createRequest(
+				map[string][]string{"namespace": {"tenant1"}},
+				map[string][]string{"namespace": {"tenant2"}},
+			),
 			[]authorizer.Attributes{
 				authorizer.AttributesRecord{
 					User:            nil,
@@ -237,102 +214,21 @@ func TestGeneratingAuthorizerAttributes(t *testing.T) {
 	}
 }
 
-func createRequest(queryParams, headers map[string]string) *http.Request {
+func createRequest(queryParams, headers map[string][]string) *http.Request {
 	r := httptest.NewRequest("GET", "/accounts", nil)
 	if queryParams != nil {
 		q := r.URL.Query()
-		for k, v := range queryParams {
-			q.Add(k, v)
+		for key, values := range queryParams {
+			for _, value := range values {
+				q.Add(key, value)
+			}
 		}
 		r.URL.RawQuery = q.Encode()
 	}
-	if headers != nil {
-		for k, v := range headers {
-			r.Header.Set(k, v)
+	for key, values := range headers {
+		for _, value := range values {
+			r.Header.Add(key, value)
 		}
 	}
 	return r
-}
-
-func setupTestScenario() []testCase {
-	testScenario := []testCase{
-		{
-			description: "Request with invalid Token should be authenticated and rejected with 401",
-			given: given{
-				req:        fakeJWTRequest("GET", "/accounts", "Bearer INVALID"),
-				authorizer: denier{},
-			},
-			expected: expected{
-				status: http.StatusUnauthorized,
-			},
-		},
-		{
-			description: "Request with valid token should return 403 due to lack of permissions",
-			given: given{
-				req:        fakeJWTRequest("GET", "/accounts", "Bearer VALID"),
-				authorizer: denier{},
-			},
-			expected: expected{
-				status: http.StatusForbidden,
-			},
-		},
-		{
-			description: "Request with valid token, should return 200 due to lack of permissions",
-			given: given{
-				req:        fakeJWTRequest("GET", "/accounts", "Bearer VALID"),
-				authorizer: approver{},
-			},
-			expected: expected{
-				status:     http.StatusOK,
-				verifyUser: true,
-			},
-		},
-	}
-	return testScenario
-}
-
-func fakeJWTRequest(method, path, token string) *http.Request {
-	req := httptest.NewRequest(method, path, nil)
-	req.Header.Add("Authorization", token)
-
-	return req
-}
-
-func fakeOIDCAuthenticator(t *testing.T, fakeUser *user.DefaultInfo) authenticator.Request {
-
-	auth := bearertoken.New(authenticator.TokenFunc(func(ctx context.Context, token string) (*authenticator.Response, bool, error) {
-		if token != "VALID" {
-			return nil, false, nil
-		}
-		return &authenticator.Response{User: fakeUser}, true, nil
-	}))
-	return auth
-}
-
-type denier struct{}
-
-func (d denier) Authorize(ctx context.Context, auth authorizer.Attributes) (authorized authorizer.Decision, reason string, err error) {
-	return authorizer.DecisionDeny, "user not allowed", nil
-}
-
-type approver struct{}
-
-func (a approver) Authorize(ctx context.Context, auth authorizer.Attributes) (authorized authorizer.Decision, reason string, err error) {
-	return authorizer.DecisionAllow, "user allowed", nil
-}
-
-type given struct {
-	req        *http.Request
-	authorizer authorizer.Authorizer
-}
-
-type expected struct {
-	status     int
-	verifyUser bool
-}
-
-type testCase struct {
-	given
-	expected
-	description string
 }

@@ -22,7 +22,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
@@ -193,9 +192,12 @@ func newSelfSignedCert(hostname string) stepFunc {
 		}
 
 		certPath, err := writeTempFile("cert", certBytes)
+		if err != nil {
+			t.Fatalf("error writing cert data: %v", err)
+		}
 		keyPath, err := writeTempFile("key", keyBytes)
 		if err != nil {
-			t.Fatalf("error writing cert/key data: %v", err)
+			t.Fatalf("error writing key data: %v", err)
 		}
 
 		s.certPath = certPath
@@ -209,7 +211,7 @@ func newSelfSignedCert(hostname string) stepFunc {
 }
 
 func doubleSymlinkCert(t *testing.T, s *scenario) {
-	name, err := ioutil.TempDir("", "keys")
+	name, err := os.MkdirTemp("", "keys")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +265,7 @@ func swapCert(t *testing.T, s *scenario) {
 }
 
 func swapSymlink(t *testing.T, s *scenario) {
-	name, err := ioutil.TempDir("", "keys")
+	name, err := os.MkdirTemp("", "keys")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +310,7 @@ func steps(gs ...stepFunc) stepFunc {
 }
 
 func writeTempFile(pattern string, data []byte) (string, error) {
-	f, err := ioutil.TempFile("", pattern)
+	f, err := os.CreateTemp("", pattern)
 	if err != nil {
 		return "", fmt.Errorf("error creating temp file: %v", err)
 	}

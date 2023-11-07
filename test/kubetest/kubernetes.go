@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"time"
@@ -30,7 +29,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -38,10 +36,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-func CreatedManifests(client kubernetes.Interface, paths ...string) Setup {
+func CreatedManifests(client kubernetes.Interface, paths ...string) Action {
 	return func(ctx *ScenarioContext) error {
 		for _, path := range paths {
-			content, err := ioutil.ReadFile(path)
+			content, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
@@ -83,6 +81,10 @@ func CreatedManifests(client kubernetes.Interface, paths ...string) Setup {
 				if err := createSecret(client, ctx, content); err != nil {
 					return err
 				}
+			case "configmap":
+				if err := createConfigmap(client, ctx, content); err != nil {
+					return err
+				}
 			default:
 				return fmt.Errorf("unable to unmarshal manifest with unknown kind: %s", kind)
 			}
@@ -101,7 +103,7 @@ func createClusterRole(client kubernetes.Interface, ctx *ScenarioContext, conten
 
 	_, err := client.RbacV1().ClusterRoles().Create(context.TODO(), cr, metav1.CreateOptions{})
 
-	ctx.AddFinalizer(func() error {
+	ctx.AddCleanUp(func() error {
 		return client.RbacV1().ClusterRoles().Delete(context.TODO(), cr.Name, metav1.DeleteOptions{})
 	})
 
@@ -118,7 +120,7 @@ func createClusterRoleBinding(client kubernetes.Interface, ctx *ScenarioContext,
 
 	_, err := client.RbacV1().ClusterRoleBindings().Create(context.TODO(), crb, metav1.CreateOptions{})
 
-	ctx.AddFinalizer(func() error {
+	ctx.AddCleanUp(func() error {
 		return client.RbacV1().ClusterRoleBindings().Delete(context.TODO(), crb.Name, metav1.DeleteOptions{})
 	})
 
@@ -137,7 +139,7 @@ func createDeployment(client kubernetes.Interface, ctx *ScenarioContext, content
 
 	_, err := client.AppsV1().Deployments(d.Namespace).Create(context.TODO(), &d, metav1.CreateOptions{})
 
-	ctx.AddFinalizer(func() error {
+	ctx.AddCleanUp(func() error {
 		dep, err := client.AppsV1().Deployments(d.Namespace).Get(context.TODO(), d.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
@@ -181,7 +183,7 @@ func dumpLogs(client kubernetes.Interface, ctx *ScenarioContext, opts metav1.Lis
 				return
 			}
 
-			io.Copy(os.Stdout, stream)
+			_, _ = io.Copy(os.Stdout, stream)
 		}
 	}
 }
@@ -198,7 +200,7 @@ func createService(client kubernetes.Interface, ctx *ScenarioContext, content []
 
 	_, err := client.CoreV1().Services(s.Namespace).Create(context.TODO(), s, metav1.CreateOptions{})
 
-	ctx.AddFinalizer(func() error {
+	ctx.AddCleanUp(func() error {
 		return client.CoreV1().Services(s.Namespace).Delete(context.TODO(), s.Name, metav1.DeleteOptions{})
 	})
 
@@ -217,7 +219,7 @@ func createServiceAccount(client kubernetes.Interface, ctx *ScenarioContext, con
 
 	_, err := client.CoreV1().ServiceAccounts(sa.Namespace).Create(context.TODO(), sa, metav1.CreateOptions{})
 
-	ctx.AddFinalizer(func() error {
+	ctx.AddCleanUp(func() error {
 		return client.CoreV1().ServiceAccounts(sa.Namespace).Delete(context.TODO(), sa.Name, metav1.DeleteOptions{})
 	})
 
@@ -236,8 +238,27 @@ func createSecret(client kubernetes.Interface, ctx *ScenarioContext, content []b
 
 	_, err := client.CoreV1().Secrets(secret.Namespace).Create(context.TODO(), secret, metav1.CreateOptions{})
 
-	ctx.AddFinalizer(func() error {
+	ctx.AddCleanUp(func() error {
 		return client.CoreV1().Secrets(secret.Namespace).Delete(context.TODO(), secret.Name, metav1.DeleteOptions{})
+	})
+
+	return err
+}
+
+func createConfigmap(client kubernetes.Interface, ctx *ScenarioContext, content []byte) error {
+	r := bytes.NewReader(content)
+
+	var configmap *corev1.ConfigMap
+	if err := kubeyaml.NewYAMLOrJSONDecoder(r, r.Len()).Decode(&configmap); err != nil {
+		return err
+	}
+
+	configmap.Namespace = ctx.Namespace
+
+	_, err := client.CoreV1().ConfigMaps(configmap.Namespace).Create(context.TODO(), configmap, metav1.CreateOptions{})
+
+	ctx.AddCleanUp(func() error {
+		return client.CoreV1().ConfigMaps(configmap.Namespace).Delete(context.TODO(), configmap.Name, metav1.DeleteOptions{})
 	})
 
 	return err
@@ -339,26 +360,19 @@ func podRunningAndReady(pod corev1.Pod) (bool, error) {
 	return false, nil
 }
 
-func Sleep(d time.Duration) Condition {
-	return func(ctx *ScenarioContext) error {
-		time.Sleep(d)
-		return nil
-	}
-}
-
 type RunOptions struct {
 	ServiceAccount     string
 	TokenAudience      string
 	ClientCertificates bool
 }
 
-func RunSucceeds(client kubernetes.Interface, image string, name string, command []string, opts *RunOptions) Check {
+func RunSucceeds(client kubernetes.Interface, image string, name string, command []string, opts *RunOptions) Action {
 	return func(ctx *ScenarioContext) error {
 		return run(client, ctx, image, name, command, opts)
 	}
 }
 
-func RunFails(client kubernetes.Interface, image string, name string, command []string, opts *RunOptions) Check {
+func RunFails(client kubernetes.Interface, image string, name string, command []string, opts *RunOptions) Action {
 	return func(ctx *ScenarioContext) error {
 		err := run(client, ctx, image, name, command, opts)
 		if err == nil {
@@ -459,7 +473,7 @@ func run(client kubernetes.Interface, ctx *ScenarioContext, image string, name s
 		return fmt.Errorf("failed to create job: %v", err)
 	}
 
-	ctx.AddFinalizer(func() error {
+	ctx.AddCleanUp(func() error {
 		err := client.BatchV1().Jobs(ctx.Namespace).Delete(context.TODO(), batch.Name, metav1.DeleteOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to delete job: %v", err)
@@ -502,22 +516,4 @@ func run(client kubernetes.Interface, ctx *ScenarioContext, image string, name s
 	}
 
 	return nil
-}
-
-func CreateNamespace(client kubernetes.Interface, name string) error {
-	ns := &v1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-		},
-	}
-
-	_, err := client.CoreV1().Namespaces().Create(context.TODO(), ns, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create namespace with name %v", name)
-	}
-	return nil
-}
-
-func DeleteNamespace(client kubernetes.Interface, name string) error {
-	return client.CoreV1().Namespaces().Delete(context.TODO(), name, metav1.DeleteOptions{})
 }

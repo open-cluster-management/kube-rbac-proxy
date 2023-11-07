@@ -1,3 +1,70 @@
+## 0.15.0 / 2023-10-20
+
+- [ENHANCEMENT] bump opentelemetry to fix CVE
+- [ENHANCEMENT] add option to disable HTTP/2: `--http2-disable` (default: `false`)
+- [ENHANCEMENT] add option to fine-tune HTTP/2:
+    - `--http2-max-size` (default: 256kb)
+    - `--http2-max-concurrent-streams` (default: 100)
+
+## 0.14.4 / 2023-10-16
+
+- [ENHANCEMENT] bump golang and x/net
+
+## 0.14.3 / 2023-09-07
+
+- [BUGFIX] `--version` returns now the proper kube-rbac-proxy version
+- [ENHANCEMENT] bump dependencies
+
+## 0.14.2 / 2023-06-05
+
+- [ENHANCEMENT] bump dependencies
+- [ENHANCEMENT] Makefile, Dockerfile to work better with different architectures
+
+## 0.14.1 / 2023-04-06
+
+- [ENHANCEMENT] bump dependencies
+
+## 0.14.0 / 2022-12-15
+
+* [ENHANCEMENT] `README.md` now contains information about the future outlook of the project wrt to deprecations, features and K8s Sig-Auth acceptance
+* [ENHANCEMENT] bump dependencies
+* [FEATURE] health endpoint `/healthz` offered on `--proxy-endpoints-port`
+* [FEATURE] `--upstream-client-cert-file` enables the kube-rbac-proxy client connecting to upstream to use TLS
+* [CHANGE] use cobra and usptream command machinery, introduces deprecation to some flags
+
+## 0.13.1 / 2022-10-04
+
+* [ENHANCEMENT] bump k8s to 1.25.2 #200 (contains fixes for CVEs)
+* [ENHANCEMENT] bump Go to 1.19.1 #178 (contains fixes for CVEs)
+* [ENHANCEMENT] bump golang.org/x/crypto due to CVE-2022-27191 #188
+* [CHANGE] add warning messages for features that will be removed
+
+## 0.13.0 / 2022-06-29
+
+* [ENHANCEMENT] bump k8s to 1.24.2 #178
+* [ENHANCEMENT] bump Go to 1.18.3 #178
+* [ENHANCEMENT] update README.md to be more accurate and up to date #178, #173
+* [ENHANCEMENT] check all headers for rewrites and create additional authz requests #171
+
+## 0.12.0 / 2022-04-08
+
+* [ENHANCEMENT] bump k8s to 1.23.5. #149, #155, #160
+* [ENHANCEMENT] add release documentation, #156
+* [ENHANCEMENT] use supported apiVersion for deployment and authorization. #150
+* [BUGFIX] ppc64le image build which in turn fixed multi-arch build. #147
+* [ENHANCEMENT] Support building on riscv64 architecture. #141
+* [ENHANCEMENT] move --upstream-force-h2c out of --insecure-listen-address. #140
+
+## 0.11.0 / 2021-08-02
+
+* [FEATURE] Support for path patterns in --allow-paths and --ignore-paths. #135
+* [ENHANCEMENT] Dynamically reload client CA. #127
+* [BUGFIX] Fix panics on client-cert authenticated requests. #132
+
+## 0.10.0 / 2021-05-07
+
+* [FEATURE] Support local static authorizer. #125
+
 ## 0.9.0 / 2021-04-27
 
 * [FEATURE] Support rewrites using HTTP headers in addition to query parameters. #104

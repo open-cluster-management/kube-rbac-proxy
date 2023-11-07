@@ -8,6 +8,25 @@ The kube-rbac-proxy is a small HTTP proxy for a single upstream, that can perfor
 
 In Kubernetes clusters without NetworkPolicies any Pod can perform requests to every other Pod in the cluster. This proxy was developed in order to restrict requests to only those Pods, that present a valid and RBAC authorized token or client TLS certificate.
 
+## Current Future and Deprecation of Flags / Features
+
+The project is seeking to be accepted as a k8s project and therefore we need to align tighter with k8s.
+As a result, we use more of the k8s code and need to deprecate features, while introducing others.
+
+The reasons for deprecation are that k8s doesn't support them anymore and partially because it is not a best practice.
+An example of "not a best practice" is to offer insecure listening and an example of upstream deprecations are some of the logging flags.
+
+The project states above that it is alpha and "flags, configuration, and behavior" can change significantly.
+Nevertheless, the project was treated like a production-v1 project: no breaking changes were introduced.
+
+We will introduce a feature branch called sig-auth-acceptance that shows how kube-rbac-proxy will change.
+
+### Maintenance
+
+We try to keep the current release secure by making necessary updates when necessary, but this is best effort.
+
+An update of Kubernetes from v0.25.2 to v0.25.5 was rolled back as it removed the `--logtostderr` flag.
+
 ## Usage
 
 The kube-rbac-proxy has all [`glog`](https://github.com/golang/glog) flags for logging purposes. To use the kube-rbac-proxy there are a few flags you may want to set:
@@ -27,10 +46,15 @@ All command line flags:
 [embedmd]:# (_output/help.txt)
 ```txt
 $ kube-rbac-proxy -h
-Usage of _output/kube-rbac-proxy:
-      --add_dir_header                              If true, adds the file directory to the header of the log messages
-      --allow-paths strings                         Comma-separated list of paths against which kube-rbac-proxy matches the incoming request. If the request doesn't match, kube-rbac-proxy responds with a 404 status code. If omitted, the incoming request path isn't checked. Cannot be used with --ignore-paths.
-      --alsologtostderr                             log to standard error as well as files
+The kube-rbac-proxy is a small HTTP proxy for a single upstream
+that can perform RBAC authorization against the Kubernetes API using SubjectAccessReview.
+
+Usage:
+  kube-rbac-proxy [flags]
+
+Kube-rbac-proxy flags:
+
+      --allow-paths strings                         Comma-separated list of paths against which kube-rbac-proxy pattern-matches the incoming request. If the request doesn't match, kube-rbac-proxy responds with a 404 status code. If omitted, the incoming request path isn't checked. Cannot be used with --ignore-paths.
       --auth-header-fields-enabled                  When set to true, kube-rbac-proxy adds auth-related fields to the headers of http requests sent to the upstream
       --auth-header-groups-field-name string        The name of the field inside a http(2) request header to tell the upstream server about the user's groups (default "x-remote-groups")
       --auth-header-groups-field-separator string   The separator string used for concatenating multiple group names in a groups header field's value (default "|")
@@ -38,14 +62,12 @@ Usage of _output/kube-rbac-proxy:
       --auth-token-audiences strings                Comma-separated list of token audiences to accept. By default a token does not have to have any specific audience. It is recommended to set a specific audience.
       --client-ca-file string                       If set, any request presenting a client certificate signed by one of the authorities in the client-ca-file is authenticated with an identity corresponding to the CommonName of the client certificate.
       --config-file string                          Configuration file to configure kube-rbac-proxy.
-      --ignore-paths strings                        Comma-separated list of paths against which kube-rbac-proxy will proxy without performing an authentication or authorization check. Cannot be used with --allow-paths.
-      --insecure-listen-address string              The address the kube-rbac-proxy HTTP server should listen on.
+      --http2-disable                               Disable HTTP/2 support
+      --http2-max-concurrent-streams uint32         The maximum number of concurrent streams per HTTP/2 connection. (default 100)
+      --http2-max-size uint32                       The maximum number of bytes that the server will accept for frame size and buffer per stream in a HTTP/2 request. (default 262144)
+      --ignore-paths strings                        Comma-separated list of paths against which kube-rbac-proxy pattern-matches the incoming request. If the requst matches, it will proxy the request without performing an authentication or authorization check. Cannot be used with --allow-paths.
+      --insecure-listen-address string              [DEPRECATED] The address the kube-rbac-proxy HTTP server should listen on.
       --kubeconfig string                           Path to a kubeconfig file, specifying how to connect to the API server. If unset, in-cluster configuration will be used
-      --log_backtrace_at traceLocation              when logging hits line file:N, emit a stack trace (default :0)
-      --log_dir string                              If non-empty, write log files in this directory
-      --log_file string                             If non-empty, use this log file
-      --log_file_max_size uint                      Defines the maximum size a log file can grow to. Unit is megabytes. If the value is 0, the maximum file size is unlimited. (default 1800)
-      --logtostderr                                 log to standard error instead of files (default true)
       --oidc-ca-file string                         If set, the OpenID server's certificate will be verified by one of the authorities in the oidc-ca-file, otherwise the host's root CA set will be used.
       --oidc-clientID string                        The client ID for the OpenID Connect client, must be set if oidc-issuer-url is set.
       --oidc-groups-claim string                    Identifier of groups in JWT claim, by default set to 'groups' (default "groups")
@@ -53,10 +75,8 @@ Usage of _output/kube-rbac-proxy:
       --oidc-issuer string                          The URL of the OpenID issuer, only HTTPS scheme will be accepted. If set, it will be used to verify the OIDC JSON Web Token (JWT).
       --oidc-sign-alg stringArray                   Supported signing algorithms, default RS256 (default [RS256])
       --oidc-username-claim string                  Identifier of the user in JWT claim, by default set to 'email' (default "email")
+      --proxy-endpoints-port int                    The port to securely serve proxy-specific endpoints (such as '/healthz'). Uses the host from the '--secure-listen-address'.
       --secure-listen-address string                The address the kube-rbac-proxy HTTPs server should listen on.
-      --skip_headers                                If true, avoid header prefixes in the log messages
-      --skip_log_headers                            If true, avoid headers when opening log files
-      --stderrthreshold severity                    logs at or above this threshold go to stderr (default 2)
       --tls-cert-file string                        File containing the default x509 Certificate for HTTPS. (CA cert, if any, concatenated after server cert)
       --tls-cipher-suites strings                   Comma-separated list of cipher suites for the server. Values are from tls package constants (https://golang.org/pkg/crypto/tls/#pkg-constants). If omitted, the default Go cipher suites will be used
       --tls-min-version string                      Minimum TLS version supported. Value must match version names from https://golang.org/pkg/crypto/tls/#pkg-constants. (default "VersionTLS12")
@@ -64,10 +84,33 @@ Usage of _output/kube-rbac-proxy:
       --tls-reload-interval duration                The interval at which to watch for TLS certificate changes, by default set to 1 minute. (default 1m0s)
       --upstream string                             The upstream URL to proxy to once requests have successfully been authenticated and authorized.
       --upstream-ca-file string                     The CA the upstream uses for TLS connection. This is required when the upstream uses TLS and its own CA certificate
+      --upstream-client-cert-file string            If set, the client will be used to authenticate the proxy to upstream. Requires --upstream-client-key-file to be set, too.
+      --upstream-client-key-file string             The key matching the certificate from --upstream-client-cert-file. If set, requires --upstream-client-cert-file to be set, too.
       --upstream-force-h2c                          Force h2c to communiate with the upstream. This is required when the upstream speaks h2c(http/2 cleartext - insecure variant of http/2) only. For example, go-grpc server in the insecure mode, such as helm's tiller w/o TLS, speaks h2c only
-  -v, --v Level                                     number for the log level verbosity
-      --vmodule moduleSpec                          comma-separated list of pattern=N settings for file-filtered logging
+
+Global flags:
+
+      --add-dir-header                   If true, adds the file directory to the header of the log messages (DEPRECATED: will be removed in a future release, see https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+      --alsologtostderr                  log to standard error as well as files (no effect when -logtostderr=true) (DEPRECATED: will be removed in a future release, see https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+  -h, --help                             help for kube-rbac-proxy
+      --log-backtrace-at traceLocation   when logging hits line file:N, emit a stack trace (default :0) (DEPRECATED: will be removed in a future release, see https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+      --log-dir string                   If non-empty, write log files in this directory (no effect when -logtostderr=true) (DEPRECATED: will be removed in a future release, see https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+      --log-file string                  If non-empty, use this log file (no effect when -logtostderr=true) (DEPRECATED: will be removed in a future release, see https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+      --log-file-max-size uint           Defines the maximum size a log file can grow to (no effect when -logtostderr=true). Unit is megabytes. If the value is 0, the maximum file size is unlimited. (default 1800) (DEPRECATED: will be removed in a future release, see https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+      --logtostderr                      log to standard error instead of files (default true) (DEPRECATED: will be removed in a future release, see https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+      --one-output                       If true, only write logs to their native severity level (vs also writing to each lower severity level; no effect when -logtostderr=true) (DEPRECATED: will be removed in a future release, see https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+      --skip-headers                     If true, avoid header prefixes in the log messages (DEPRECATED: will be removed in a future release, see https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+      --skip-log-headers                 If true, avoid headers when opening log files (no effect when -logtostderr=true) (DEPRECATED: will be removed in a future release, see https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+      --stderrthreshold severity         logs at or above this threshold go to stderr when writing to files and stderr (no effect when -logtostderr=true or -alsologtostderr=false) (default 2) (DEPRECATED: will be removed in a future release, see https://github.com/kubernetes/enhancements/tree/master/keps/sig-instrumentation/2845-deprecate-klog-specific-flags-in-k8s-components)
+      --version version[=true]           Print version information and quit
 ```
+
+
+### How to update Go dependencies
+
+To update the Go dependencies run `make update-go-deps`.
+
+This might be useful to do during a release.
 
 ## Why?
 
@@ -106,6 +149,13 @@ There are a couple of reasons why the existence of NetworkPolicies may not cover
 This projects is not intended to compete with Envoy or IstioMesh. Although on the surface they seem similar, the goals and usage complement each other. It's perfectly ok to use Envoy as the ingress point of traffic of a Pod, which then forwards traffic to the kube-rbac-proxy, which in turn then proxies to the actually serving application.
 
 Additionally, to my knowledge Envoy neither has nor plans Kubernetes specific RBAC/AuthZ support (maybe it shouldn’t even). My knowledge may very well be incomplete, please point out if it is. After all I'm happy if I don't have to maintain more code, but as long as this serves a purpose to me and no other project can provide it, I'll maintain this.
+
+## Testing
+
+To run tests locally, you need to have [kind](https://kind.sigs.k8s.io/) installed.
+By default it uses the default cluster, so be aware that **it overrides your default kind cluster**.
+
+The command to execute the tests is: `make test-local`.
 
 ## Roadmap
 
