@@ -1,3 +1,6 @@
+//go:build e2e
+// +build e2e
+
 /*
 Copyright 2017 Frederic Branczyk All rights reserved.
 
@@ -20,8 +23,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/brancz/kube-rbac-proxy/test/kubetest"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/brancz/kube-rbac-proxy/test/kubetest"
 )
 
 func testBasics(s *kubetest.Suite) kubetest.TestSuite {
