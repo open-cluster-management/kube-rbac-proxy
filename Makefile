@@ -83,7 +83,7 @@ test-unit:
 	go test -v -race -count=1 $(PKGS)
 
 test-e2e:
-	go test -timeout 55m -v ./test/e2e/ $(TEST_RUN_ARGS) --kubeconfig=$(KUBECONFIG)
+	go test -tags e2e -timeout 55m -v ./test/e2e/ $(TEST_RUN_ARGS) --kubeconfig=$(KUBECONFIG)
 
 generate: build $(EMBEDMD_BINARY)
 	@echo ">> generating examples"
