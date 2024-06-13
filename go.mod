@@ -1,13 +1,13 @@
 module github.com/brancz/kube-rbac-proxy
 
-go 1.20
+go 1.21
 
 require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/google/go-cmp v0.5.4
 	github.com/oklog/run v1.0.0
 	github.com/spf13/pflag v1.0.5
-	golang.org/x/net v0.10.0
+	golang.org/x/net v0.26.0
 	gopkg.in/yaml.v2 v2.2.8
 	k8s.io/api v0.19.2
 	k8s.io/apimachinery v0.19.2
@@ -50,17 +50,18 @@ require (
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.10.0 // indirect
 	github.com/prometheus/procfs v0.1.3 // indirect
-	golang.org/x/crypto v0.14.0 // indirect
+	golang.org/x/crypto v0.24.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20191202225959-858c2ad4c8b6 // indirect
-	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
-	golang.org/x/term v0.13.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
+	golang.org/x/sync v0.7.0 // indirect
+	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/term v0.21.0 // indirect
+	golang.org/x/text v0.16.0 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	google.golang.org/appengine v1.6.5 // indirect
 	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013 // indirect
 	google.golang.org/grpc v1.27.0 // indirect
 	google.golang.org/protobuf v1.24.0 // indirect
+	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/square/go-jose.v2 v2.2.2 // indirect
 	k8s.io/kube-openapi v0.0.0-20200805222855-6aeccd4b50c6 // indirect
@@ -70,4 +71,4 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-replace golang.org/x/net => golang.org/x/net v0.17.0
+replace gopkg.in/square/go-jose.v2 => github.com/go-jose/go-jose v2.6.3+incompatible
