@@ -1,4 +1,4 @@
-FROM node:8.9.4-alpine
+FROM node:22.3.0-alpine
 
 RUN apk add --update --no-cache python
 
