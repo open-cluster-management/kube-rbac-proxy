@@ -3,7 +3,7 @@
     "github>konflux-ci/mintmaker//config/renovate/renovate.json"
   ],
   "baseBranches": ["main", "/release-\\d+\\.\\d+/"],
-  "schedule": ["on thursday before 10am"],
+  "schedule": ["on thursday at 12pm"],
   "updateNotScheduled": false,
   "autoApprove": true,
   "updatePinnedDependencies": false
