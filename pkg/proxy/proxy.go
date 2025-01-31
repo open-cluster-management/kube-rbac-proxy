@@ -71,7 +71,7 @@ func (h *kubeRBACProxy) Handle(w http.ResponseWriter, req *http.Request) bool {
 	// Authenticate
 	u, ok, err := h.AuthenticateRequest(req)
 	if err != nil {
-		klog.Errorf("Unable to authenticate the request due to an error: %v", err)
+		klog.Errorf("test Unable to authenticate the request due to an error: %v", err)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return false
 	}
